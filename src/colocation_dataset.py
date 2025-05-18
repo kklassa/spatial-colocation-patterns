@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import List, Tuple
 import pandas as pd
 import overpy
 
@@ -28,11 +29,13 @@ class ColocationDataset(ABC):
         Returns:
             DataFrame with the loaded data.
         """
+        if self._data is None:
+            self.load_data()
         return self._data
 
 
 class OSMColocationDataset(ColocationDataset):
-    def __init__(self, area: tuple, poi_types: list):
+    def __init__(self, area: Tuple[float], poi_types: List[str]):
         """
         Colocation dataset for OpenStreetMap (OSM) data.
 
@@ -74,15 +77,3 @@ class OSMColocationDataset(ColocationDataset):
 
         self._data = pd.DataFrame(data)
         return self.data
-
-    @property
-    def data(self) -> pd.DataFrame:
-        """
-        Returns the loaded data.
-        
-        Returns:
-            DataFrame with the loaded data.
-        """
-        if self._data is None:
-            self.load_data()
-        return self._data
