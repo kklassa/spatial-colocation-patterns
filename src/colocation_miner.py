@@ -3,31 +3,45 @@ from collections import defaultdict
 from itertools import combinations
 from scipy.spatial import KDTree
 import time
+from typing import Dict, List, Set, Tuple, Optional, Any
 
 from src.colocation_pattern import ColocationPattern
+from src.types import InstanceId, FeatureType, TypeInstancePair, Pattern, PatternInstance
 
 
 class ColocationMiner:
-    def __init__(self, radius=0.005, min_prevalence=0.3):
+    def __init__(self, radius: float = 0.005, min_prevalence: float = 0.3):
+        """
+        Initialize the colocation pattern miner.
+        
+        Args:
+            radius: The neighborhood radius for spatial proximity
+            min_prevalence: The minimum participation index threshold
+        """
         self.radius = radius
         self.min_prevalence = min_prevalence
-        self.patterns = []
+        self.patterns: List[ColocationPattern] = []
         # Store spatial indices for reuse
-        self.spatial_indices = {}
+        self.spatial_indices: Dict[FeatureType, Dict[str, Any]] = {}
         # Store neighbor relations for all instances
-        self.instance_neighbors = defaultdict(set)
+        self.instance_neighbors: Dict[TypeInstancePair, Set[TypeInstancePair]] = defaultdict(set)
+        # Store participation ratios for each feature type in each pattern
+        self.participation_ratios: Dict[Pattern, Dict[FeatureType, float]] = {}
 
-    def fit(self, df: pd.DataFrame):
+    def fit(self, df: pd.DataFrame) -> None:
         """
         Main method to find colocation patterns in spatial data.
+        
+        Args:
+            df: DataFrame containing spatial features with columns: 'type', 'x', 'y'
         """
         start_time = time.time()
         
         # Prepare data
         self.df = df.reset_index(drop=True)
         self.df['id'] = self.df.index
-        self.unique_types = list(self.df['type'].unique())
-        self.instances_by_type = {
+        self.unique_types: List[FeatureType] = list(self.df['type'].unique())
+        self.instances_by_type: Dict[FeatureType, pd.DataFrame] = {
             t: self.df[self.df['type'] == t] for t in self.unique_types
         }
         
@@ -61,8 +75,14 @@ class ColocationMiner:
             if not candidates:
                 break
             
+            # Apply prevalence-based pruning
+            pruned_candidates = self._prevalence_based_pruning(candidates, k)
+            print(f"After pruning: {len(pruned_candidates)} candidates remain")
+            if not pruned_candidates:
+                break
+            
             # Find which candidates meet the prevalence threshold
-            new_patterns = self._discover_frequent_patterns_for_candidates(candidates)
+            new_patterns = self._discover_frequent_patterns_for_candidates(pruned_candidates)
             print(f"Found {len(new_patterns)} frequent patterns in {time.time() - start_time:.2f} seconds")
             
             if not new_patterns:
@@ -71,8 +91,8 @@ class ColocationMiner:
             self.patterns.extend(new_patterns)
             k += 1
 
-    def _build_spatial_indices(self):
-        """Build KDTree indices for each type once to avoid rebuilding"""
+    def _build_spatial_indices(self) -> None:
+        """Build KDTree indices for each type once to avoid rebuilding."""
         for t, instances in self.instances_by_type.items():
             points = instances[['x', 'y']].values
             self.spatial_indices[t] = {
@@ -81,7 +101,7 @@ class ColocationMiner:
                 'points': points
             }
 
-    def _precompute_all_neighbors(self):
+    def _precompute_all_neighbors(self) -> None:
         """
         Precompute all neighbor relationships to avoid repeated spatial queries.
         For each instance, store all its neighbors regardless of type.
@@ -103,20 +123,23 @@ class ColocationMiner:
                     self.instance_neighbors[(t1, id1)].add((t2, id2))
                     self.instance_neighbors[(t2, id2)].add((t1, id1))
 
-    def _discover_size_2_patterns(self):
+    def _discover_size_2_patterns(self) -> List[ColocationPattern]:
         """
         Discovers patterns of size 2 (pairs of types) with prevalence above threshold.
         Uses the precomputed neighbor relationships.
+        
+        Returns:
+            List of ColocationPattern objects of size 2
         """
-        patterns = []
+        patterns: List[ColocationPattern] = []
         
         for t1, t2 in combinations(self.unique_types, 2):
             # Find participating instances of each type
-            participants_t1 = set()
-            participants_t2 = set()
+            participants_t1: Set[InstanceId] = set()
+            participants_t2: Set[InstanceId] = set()
             
             # Count instances that participate in this relationship
-            instances = []
+            instances: List[Tuple[InstanceId, InstanceId]] = []
             
             for id1 in self.instances_by_type[t1]['id'].values:
                 has_neighbor = False
@@ -134,16 +157,29 @@ class ColocationMiner:
             pi2 = len(participants_t2) / len(self.instances_by_type[t2]) if len(self.instances_by_type[t2]) > 0 else 0
             pi = min(pi1, pi2)
             
+            # Store participation ratios for later use in prevalence-based pruning
+            pattern = (t1, t2)
+            self.participation_ratios[pattern] = {
+                t1: pi1,
+                t2: pi2
+            }
+            
             # If prevalence is above threshold, add to patterns
             if pi >= self.min_prevalence and instances:
-                patterns.append(ColocationPattern((t1, t2), pi, instances))
+                patterns.append(ColocationPattern(pattern, pi, instances))
         
         return patterns
 
-    def _generate_candidates(self, k):
+    def _generate_candidates(self, k: int) -> List[Pattern]:
         """
         Generate candidate patterns of size k using the apriori principle:
         All subsets of a frequent pattern must also be frequent.
+        
+        Args:
+            k: Size of candidate patterns to generate
+            
+        Returns:
+            List of candidate patterns of size k
         """
         # Get patterns of size k-1 from previous iteration
         prev_patterns = [p for p in self.patterns if len(p.types) == k-1]
@@ -151,7 +187,7 @@ class ColocationMiner:
             return []
         
         # Use a set to avoid duplicates
-        candidates = set()
+        candidates: Set[Pattern] = set()
         
         for i, p1 in enumerate(prev_patterns):
             for p2 in prev_patterns[i+1:]:
@@ -173,15 +209,61 @@ class ColocationMiner:
         
         return list(candidates)
 
-    def _discover_frequent_patterns_for_candidates(self, candidates):
+    def _prevalence_based_pruning(self, candidates: List[Pattern], k: int) -> List[Pattern]:
+        """
+        Prune candidates using an upper bound of participation index based on
+        participation ratios of (k-1)-subpatterns.
+        
+        Args:
+            candidates: List of candidate patterns to prune
+            k: Size of the candidate patterns
+            
+        Returns:
+            List of candidate patterns that pass the pruning filter
+        """
+        pruned_candidates: List[Pattern] = []
+        
+        for candidate in candidates:
+            # Calculate upper bound of PI based on subpatterns
+            max_pi_possible = 1.0
+            
+            # For each feature type in the candidate pattern
+            for feature_type in candidate:
+                # Find the minimum participation ratio for this feature type
+                # across all (k-1)-subpatterns containing it
+                min_ratio = 1.0
+                
+                for subpattern in combinations(candidate, k-1):
+                    if feature_type in subpattern:
+                        subpattern_sorted = tuple(sorted(subpattern))
+                        if subpattern_sorted in self.participation_ratios:
+                            ratio = self.participation_ratios[subpattern_sorted].get(feature_type, 0.0)
+                            min_ratio = min(min_ratio, ratio)
+                
+                # Update the maximum possible PI for this candidate
+                max_pi_possible = min(max_pi_possible, min_ratio)
+            
+            # If the upper bound is at least the threshold, keep the candidate
+            if max_pi_possible >= self.min_prevalence:
+                pruned_candidates.append(candidate)
+        
+        return pruned_candidates
+
+    def _discover_frequent_patterns_for_candidates(self, candidates: List[Pattern]) -> List[ColocationPattern]:
         """
         Check which candidate patterns meet the minimum prevalence threshold.
+        
+        Args:
+            candidates: List of candidate patterns to evaluate
+            
+        Returns:
+            List of ColocationPattern objects that meet the prevalence threshold
         """
-        new_patterns = []
+        new_patterns: List[ColocationPattern] = []
         
         for candidate in candidates:
             # For each type in the candidate pattern, count participating instances
-            participants = {t: set() for t in candidate}
+            participants: Dict[FeatureType, Set[InstanceId]] = {t: set() for t in candidate}
             instances = self._find_pattern_instances(candidate)
             
             # Count participating instances for each type
@@ -189,13 +271,19 @@ class ColocationMiner:
                 for t, id_val in zip(candidate, instance):
                     participants[t].add(id_val)
             
-            # Calculate participation index
-            pis = [
-                len(participants[t]) / len(self.instances_by_type[t]) 
-                for t in candidate 
-                if len(self.instances_by_type[t]) > 0
-            ]
-            pi = min(pis) if pis else 0
+            # Calculate participation ratios for each feature type
+            participation_ratios: Dict[FeatureType, float] = {}
+            for t in candidate:
+                participation_ratios[t] = (
+                    len(participants[t]) / len(self.instances_by_type[t]) 
+                    if len(self.instances_by_type[t]) > 0 else 0
+                )
+            
+            # Store participation ratios for later use in prevalence-based pruning
+            self.participation_ratios[candidate] = participation_ratios
+            
+            # Calculate participation index (minimum participation ratio)
+            pi = min(participation_ratios.values()) if participation_ratios else 0
             
             # Add to patterns if above threshold
             if pi >= self.min_prevalence and instances:
@@ -203,19 +291,26 @@ class ColocationMiner:
         
         return new_patterns
 
-    def _find_pattern_instances(self, pattern_types):
+    def _find_pattern_instances(self, pattern_types: Pattern) -> List[PatternInstance]:
         """
         Find all instances of a given pattern type using precomputed neighbor information.
-        This is a critical performance method using clique-based approach.
+        
+        Args:
+            pattern_types: Tuple of feature types forming the pattern
+            
+        Returns:
+            List of tuples containing instance IDs that form instances of the pattern
         """
         # Start with instances of the first type
         first_type = pattern_types[0]
-        current_instances = [((first_type, id_val),) for id_val in self.instances_by_type[first_type]['id'].values]
+        current_instances: List[Tuple[TypeInstancePair, ...]] = [
+            ((first_type, id_val),) for id_val in self.instances_by_type[first_type]['id'].values
+        ]
         
         # Iteratively add one type at a time
         for i in range(1, len(pattern_types)):
             current_type = pattern_types[i]
-            new_instances = []
+            new_instances: List[Tuple[TypeInstancePair, ...]] = []
             
             for instance in current_instances:
                 # Check if this partial instance can be extended
@@ -231,27 +326,26 @@ class ColocationMiner:
                     continue
                 
                 # Get all potential candidates of current_type that neighbor all existing members
-                candidates = set()
-                for j, (neighbor_type, neighbor_id) in enumerate(self.instance_neighbors.get(instance[0], set())):
-                    if neighbor_type == current_type:
-                        if j == 0:
-                            candidates = {neighbor_id}
-                        else:
-                            candidates.add(neighbor_id)
+                candidates: Optional[Set[InstanceId]] = None
                 
-                # Filter candidates to ensure they neighbor ALL existing members
-                for type_id_pair in instance[1:]:
+                for type_id_pair in instance:
                     current_neighbors = {neighbor_id for neighbor_type, neighbor_id in 
                                          self.instance_neighbors.get(type_id_pair, set()) 
                                          if neighbor_type == current_type}
-                    candidates &= current_neighbors
+                    
+                    if candidates is None:
+                        candidates = current_neighbors
+                    else:
+                        candidates &= current_neighbors
+                    
                     if not candidates:
                         break
                 
                 # Add all valid extensions to new instances
-                for candidate_id in candidates:
-                    new_instance = instance + ((current_type, candidate_id),)
-                    new_instances.append(new_instance)
+                if candidates:
+                    for candidate_id in candidates:
+                        new_instance = instance + ((current_type, candidate_id),)
+                        new_instances.append(new_instance)
             
             # If no extensions were found, this pattern has no instances
             if not new_instances:
@@ -260,13 +354,18 @@ class ColocationMiner:
             current_instances = new_instances
         
         # Extract just the IDs in the right order from the final instances
-        result = []
+        result: List[PatternInstance] = []
         for instance in current_instances:
             id_list = [id_val for _, id_val in instance]
             result.append(tuple(id_list))
         
         return result
 
-    def get_patterns(self):
-        """Returns all discovered patterns sorted by participation index."""
+    def get_patterns(self) -> List[ColocationPattern]:
+        """
+        Returns all discovered patterns sorted by participation index.
+        
+        Returns:
+            List of ColocationPattern objects sorted by descending PI and then by pattern size
+        """
         return sorted(self.patterns, key=lambda p: (-p.pi, len(p.types)))

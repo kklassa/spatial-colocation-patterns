@@ -12,12 +12,22 @@ class ColocationDataset(ABC):
 
     @abstractmethod
     def load_data(self) -> pd.DataFrame:
-        """Loads the data from the source."""
+        """
+        Loads the data from the source.
+        
+        Returns:
+            DataFrame with the loaded data.
+        """
         pass
 
     @property
     def data(self) -> pd.DataFrame:
-        """Returns the loaded data."""
+        """
+        Returns the loaded data.
+        
+        Returns:
+            DataFrame with the loaded data.
+        """
         return self._data
 
 
@@ -26,15 +36,21 @@ class OSMColocationDataset(ColocationDataset):
         """
         Colocation dataset for OpenStreetMap (OSM) data.
 
-        :param area: Area in the format (min_lat, min_lon, max_lat, max_lon)
-        :param poi_types: List of POI types to search for (e.g., ['restaurant', 'bank'])
+        Args:
+            area (tuple): Bounding box in the format (min_lat, min_lon, max_lat, max_lon).
+            poi_types (list): List of POI types to load from OSM.
         """
         super().__init__()
         self._area = area
         self._poi_types = poi_types
 
     def load_data(self) -> pd.DataFrame:
-        """Loads data from OSM using the Overpass API."""
+        """
+        Loads data from OSM using the Overpass API."
+        
+        Returns:
+            DataFrame with the loaded data.
+        """
         api = overpy.Overpass()
 
         query = f"""
@@ -61,7 +77,12 @@ class OSMColocationDataset(ColocationDataset):
 
     @property
     def data(self) -> pd.DataFrame:
-        """Returns the loaded data."""
+        """
+        Returns the loaded data.
+        
+        Returns:
+            DataFrame with the loaded data.
+        """
         if self._data is None:
             self.load_data()
         return self._data
