@@ -222,7 +222,7 @@ Zwraca wszystkie odkryte wzorce kolokacji posortowane według wskaźnika uczestn
 
 Bazowa, abstrakcyjna klasa zbioru danych umożliwiającego wykorzystanie do odkrywania wzorców kolokacji przestrzennych.
 
-### Incjalizacja
+### Inicjalizacja
 
 ```python
 def __init__(self):
@@ -245,7 +245,7 @@ Abstrakcyjna metoda wczytująca dane ze źródła danych i zwracająca `DataFram
 
 Klasa `OSMColocationDataset` jest implementacją zbioru danych do odkrywania kolokacj przestrzennych bazującego na danych o points of interest (POI) dostępnych w bazie danych geograficznych OpenStreetMap.
 
-### Incjalizacja
+### Inicjalizacja
 
 ```python
 def __init__(self, area: Tuple[float], poi_types: List[str]):
@@ -253,10 +253,10 @@ def __init__(self, area: Tuple[float], poi_types: List[str]):
 
 **Parametry:**
 - `area`: Krotka zawierające współrzędne bounding box terenu w kolejności minimalna szerokość, minimalna długość, maksymalna szerokość, masymalna długość geograficzna.
-- `poi_types`: Lista wybrancyh typów POI dostępnych w OpenStreetMap.
+- `poi_types`: Lista wybrancyh typów POI dostępnych w OpenStreetMap (możliwe typy można znaleźć [pod tym adresem](https://wiki.openstreetmap.org/wiki/Pl:Key:amenity)).
 
 **Opis:**
-Konstruktor inicjalizuje obiekt oraz domyślnie ustawia atrybut `_data` na `None`. 
+Konstruktor inicjalizuje obiekt oraz atrybuty klasy.
 
 ### Metoda `load_data`
 
@@ -267,20 +267,70 @@ def load_data(self) -> pd.DataFrame:
 **Opis:**
 Metoda wykorzystująca bilbiotekę `overpy` do odpytania bazy danych OSM o położenie POI występujących na obszarze podanym przy inicjalizacji klasy. Dla każdego POI zwracany jest identyfikator `id`, nazwa typu `type` oraz współrzędna szerokości geograficznej `x` oraz długości geograficznej `y`.
 
-## Złożoność Czasowa
+## Klasa `GBIFColocationDataset
 
-- Obliczanie sąsiedztwa: O(n log n), gdzie n to liczba instancji.
-- Odkrywanie instancji dla wzorców rozmiaru k: O(n^k) w najgorszym przypadku, ale znacznie lepsza w praktyce dzięki przycinaniu.
-- Całkowita złożoność algorytmu: O(m^k * n^k), gdzie m to liczba typów obiektów, a k to maksymalny rozmiar wzorca.
+Klasa `OSMColocationDataset` jest implementacją zbioru danych do odkrywania kolokacj przestrzennych bazującego na danych o obserwacjach gatunków roślin i zwierząt zanotowanych w bazie danych Global Biodiversity Information Facility (GBIF).
+
+### Inicjalizacja
+
+```python
+def __init__(self, 
+   area: Tuple[float], 
+   species_names: List[str], 
+   min_year: int = 2010,
+   limit_per_species: int | None = None,
+):
+```
+
+**Parametry:**
+- `area`: Krotka zawierające współrzędne bounding box terenu w kolejności minimalna szerokość, minimalna długość, maksymalna szerokość, masymalna długość geograficzna.
+- `species_names`: Lista nazw naukowych wybranych gatunków.
+- `min_year`: Minimalny rok obserwacji do włączenia w zbiór danych.
+- `limit_per_species`: Opcjonalny limit ilości obserwacji dla jednego gatunku w zbiorze.
+
+**Opis:**
+Konstruktor inicjalizuje obiekt oraz atrybuty klasy. 
+
+### Metoda `_get_species_key`
+
+```python
+def _get_species_key(self, species_name: str) -> int:
+```
+
+**Parametry:**
+- `species_name`: Nazwa naukowa gatunku rośliny lub zwierzęcia.
+
+**Opis:**
+Metoda wykorzystuje API GBIF do odnalezienia klucza w bazie danych odpowiadającego wybranemu gatunkowi.
+
+### Metoda `_get_all_occurrences`
+
+```python
+def _get_all_occurrences(self, species_key: int, species_name: str) -> List[Dict[str, Any]]:
+```
+
+**Parametry:**
+- `species_key`: klucz w bazie GBIF odpowiadający gatunkowi.
+- `species_name`: Nazwa naukowa gatunku rośliny lub zwierzęcia.
+
+**Opis:**
+Metoda wykorzystuje API GBIF do pobrania wszystkich (lub ograniczonych limitem) obserwacji danego gatunku na obszarze ustawionym podczas inicjalizacji klasy. 
+
+### Metoda `load_data`
+
+```python
+def load_data(self) -> pd.DataFrame:
+```
+
+**Opis:**
+Metoda wywołuje metody `_get_species_key` oraz `_get_all_occurrences` dla każdego z podanych gatunków i zapisuje pobrane obserwacje w DataFrame. Dla obserwacji gatunku zwracany jest identyfikator `id`, nazwa gatunku `type` oraz współrzędna szerokości geograficznej `x` oraz długości geograficznej `y` na której dokonano obserwacji.
 
 ## Optymalizacje
 
-Zaimplementowano kilka kluczowych optymalizacji, które znacznie poprawiają wydajność algorytmu:
+Zaimplementowano kilka kluczowych optymalizacji (zarówno zawartych w artykule źródłowym, jak i dodatkowych), które znacznie poprawiają wydajność algorytmu:
 
 1. **Ponowne wykorzystanie indeksów przestrzennych**: Drzewa KDTree są budowane raz dla każdego typu obiektu.
 2. **Wstępne obliczanie relacji sąsiedztwa**: Wszystkie relacje sąsiedztwa są obliczane z góry.
 3. **Przycinanie na podstawie wskaźnika uczestnictwa**: Filtrowanie kandydatów na podstawie górnych ograniczeń wskaźnika uczestnictwa.
 4. **Odkrywanie instancji oparte na klikach**: Efektywne podejście do znajdowania instancji wzorców.
 5. **Efektywne generowanie kandydatów**: Wykorzystanie zasady apriori do ograniczenia przestrzeni poszukiwań.
-
-Te optymalizacje sprawiają, że algorytm jest w stanie efektywnie odkrywać wzorce kolokacji nawet w dużych zbiorach danych z wieloma typami obiektów.
