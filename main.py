@@ -23,7 +23,7 @@ def main():
     
     # Parse POI types
     # poi_types = args.poi_types.split(',')
-    poi_types = poi_types = ["bar", "cafe", "fast_food", "food_court", "ice_cream", "pub", 'restaurant', "college", "library", "research_institute", "school", "university", "parking", "atm", 'bank', "clinic", "doctors", "pharmacy", "veterinary", "casino", "cinema", "events_venue", "nightclub", "theatre", "	police"]
+    poi_types = ["bar", "cafe", "fast_food", "food_court", "ice_cream", "pub", 'restaurant', "college", "library", "research_institute", "school", "university", "parking", "atm", 'bank', "clinic", "doctors", "pharmacy", "veterinary", "casino", "cinema", "events_venue", "nightclub", "theatre", "	police"]
     
     print(f"Loading data for {len(poi_types)} POI types in area {area}")
     dataset = OSMColocationDataset(area, poi_types)

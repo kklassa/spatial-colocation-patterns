@@ -21,8 +21,8 @@ def __init__(
 
 **Parametry:**
 - `types`: cechy przestrzenne wchodzące w skład wzorca.
-- `participation_index`: wskaźnika uczestnictwa dla wzorca.
-- `instances`: lista instacji kolokacji odpowiadających wzorcowi
+- `participation_index`: wskaźnik uczestnictwa dla wzorca.
+- `instances`: lista instacji kolokacji odpowiadających wzorcowi.
 
 **Opis:**
 Konstruktor inicjalizuje obiekt na podstawie danych odkrytego przez algorytm wzorca.
@@ -95,7 +95,7 @@ def _build_spatial_indices(self) -> None:
 ```
 
 **Opis:**
-Tworzy indeksy przestrzenne (KDTree) dla każdego typu obiektu. Jest to optymalizacja, która pozwala na efektywne przeszukiwanie przestrzenne. Dla każdego typu obiektu, metoda:
+Tworzy indeksy przestrzenne (KDTree) dla każdego typu obiektu. Dla każdego typu obiektu:  
 1. Pobiera współrzędne wszystkich instancji tego typu.
 2. Buduje drzewo KDTree dla tych współrzędnych.
 3. Przechowuje drzewo, identyfikatory instancji i współrzędne w słowniku `spatial_indices`.
@@ -109,11 +109,9 @@ def _precompute_all_neighbors(self) -> None:
 ```
 
 **Opis:**
-Oblicza wszystkie relacje sąsiedztwa z góry, co jest jedną z kluczowych optymalizacji algorytmu. Dla każdej pary typów obiektów, metoda:
+Oblicza wszystkie relacje sąsiedztwa z góry (w ramach optymalizacji algorytmu). Dla każdej pary typów obiektów:
 1. Używa wcześniej zbudowanych drzew KDTree do znalezienia wszystkich par instancji, które są w odległości mniejszej niż `radius`.
-2. Zapisuje te relacje sąsiedztwa w dwukierunkowej macierzy sąsiedztwa `instance_neighbors`.
-
-Dzięki temu, podczas odkrywania wzorców nie ma potrzeby ponownego obliczania odległości między obiektami, co znacznie przyspiesza algorytm, szczególnie dla dużych zbiorów danych.
+2. Zapisuje relacje sąsiedztwa w macierzy sąsiedztwa `instance_neighbors`.
 
 ### Metoda `_discover_size_2_patterns`
 
@@ -128,8 +126,6 @@ Odkrywa wzorce kolokacji rozmiaru 2 (pary typów obiektów) o wskaźniku uczestn
 3. Oblicza wskaźnik uczestnictwa jako minimum z tych współczynników.
 4. Jeśli wskaźnik jest powyżej progu, tworzy nowy wzorzec kolokacji.
 5. Zapisuje współczynniki uczestnictwa dla późniejszego wykorzystania w przycinaniu na podstawie wskaźnika uczestnictwa.
-
-Wzorce rozmiaru 2 są fundamentem dla odkrywania większych wzorców, a ich dokładne obliczenie jest kluczowe dla wydajności całego algorytmu.
 
 ### Metoda `_generate_candidates`
 
@@ -147,8 +143,6 @@ Generuje kandydatów na wzorce kolokacji rozmiaru k, wykorzystując zasadę apri
 3. Weryfikuje, czy wszystkie podzbiory rozmiaru k-1 potencjalnego kandydata są częstymi wzorcami.
 4. Jeśli tak, dodaje kandydata do listy.
 
-Ta implementacja jest bardziej efektywna niż generowanie wszystkich możliwych kombinacji typów, gdyż wykorzystuje zasadę apriori do ograniczenia przestrzeni poszukiwań.
-
 ### Metoda `_prevalence_based_pruning`
 
 ```python
@@ -160,13 +154,11 @@ def _prevalence_based_pruning(self, candidates: List[Pattern], k: int) -> List[P
 - `k`: Rozmiar kandydatów.
 
 **Opis:**
-Przycina kandydatów na wzorce na podstawie górnego ograniczenia wskaźnika uczestnictwa, co jest optymalizacją opisaną w oryginalnym artykule. Dla każdego kandydata C rozmiaru k, metoda:
+Przycina kandydatów na wzorce na podstawie górnego ograniczenia wskaźnika uczestnictwa. Metoda pozwala na wczesne odrzucenie kandydatów, którzy nie mogą spełnić kryterium minimalnego wskaźnika uczestnictwa, bez konieczności kosztownego odkrywania wszystkich ich instancji. Dla każdego kandydata C rozmiaru k, metoda:
 1. Dla każdego typu f w C, znajduje minimalny współczynnik uczestnictwa f we wszystkich podwzorcach C rozmiaru k-1.
 2. Ten minimalny współczynnik stanowi górne ograniczenie współczynnika uczestnictwa f w C.
 3. Oblicza maksymalny możliwy wskaźnik uczestnictwa dla C jako minimum z tych górnych ograniczeń.
 4. Jeśli to maksimum jest poniżej progu, C nie może być częstym wzorcem i jest odrzucany.
-
-Ta optymalizacja pozwala na wczesne odrzucenie kandydatów, którzy nie mogą spełnić kryterium minimalnego wskaźnika uczestnictwa, bez konieczności kosztownego odkrywania wszystkich ich instancji.
 
 ### Metoda `_discover_frequent_patterns_for_candidates`
 
@@ -186,19 +178,17 @@ Sprawdza, którzy kandydaci spełniają kryterium minimalnego wskaźnika uczestn
 5. Jeśli wskaźnik jest powyżej progu, tworzy nowy wzorzec kolokacji.
 6. Zapisuje współczynniki uczestnictwa dla późniejszego wykorzystania w przycinaniu.
 
-Ta metoda jest głównym filtrem, który decyduje, które wzorce są wystarczająco częste, aby zostać uznane za wzorce kolokacji.
-
 ### Metoda `_find_pattern_instances`
 
 ```python
-def _find_pattern_instances(self, pattern_types: Pattern) -> List[PatternInstance]:
+def _find_pattern_instances(self, pattern_types: Tuple[Pattern]) -> List[PatternInstance]:
 ```
 
 **Parametry:**
 - `pattern_types`: Krotka typów tworzących wzorzec.
 
 **Opis:**
-Znajduje wszystkie instancje danego wzorca za pomocą podejścia opartego na klikach w grafie sąsiedztwa. Metoda wykorzystuje wcześniej obliczone relacje sąsiedztwa i działa następująco:
+Znajduje wszystkie instancje danego wzorca za pomocą podejścia opartego na klikach w grafie sąsiedztwa. Metoda wykorzystuje wcześniej obliczone relacje sąsiedztwa. Jej działanie przebiega następująco:
 1. Rozpoczyna od instancji pierwszego typu w wzorcu.
 2. Iteracyjnie dodaje jeden typ na raz:
    - Dla każdej częściowej instancji, sprawdza, czy może zostać rozszerzona o instancje bieżącego typu.
@@ -207,8 +197,6 @@ Znajduje wszystkie instancje danego wzorca za pomocą podejścia opartego na kli
 3. Jeśli na dowolnym etapie nie można znaleźć rozszerzeń, wzorzec nie ma instancji.
 4. Ekstrahuje same identyfikatory z końcowych instancji.
 
-Ta implementacja jest znacznie bardziej efektywna niż generowanie wszystkich możliwych kombinacji instancji, gdyż wykorzystuje strukturę grafu sąsiedztwa do ograniczenia przestrzeni poszukiwań.
-
 ### Metoda `get_patterns`
 
 ```python
@@ -216,7 +204,7 @@ def get_patterns(self) -> List[ColocationPattern]:
 ```
 
 **Opis:**
-Zwraca wszystkie odkryte wzorce kolokacji posortowane według wskaźnika uczestnictwa (malejąco) i rozmiaru wzorca. Jest to metoda pomocnicza, która umożliwia dostęp do wyników algorytmu.
+Zwraca wszystkie odkryte wzorce kolokacji posortowane według wskaźnika uczestnictwa (malejąco) i rozmiaru wzorca.
 
 ## Klasa `ColocationDataset`
 
@@ -267,9 +255,9 @@ def load_data(self) -> pd.DataFrame:
 **Opis:**
 Metoda wykorzystująca bilbiotekę `overpy` do odpytania bazy danych OSM o położenie POI występujących na obszarze podanym przy inicjalizacji klasy. Dla każdego POI zwracany jest identyfikator `id`, nazwa typu `type` oraz współrzędna szerokości geograficznej `x` oraz długości geograficznej `y`.
 
-## Klasa `GBIFColocationDataset
+## Klasa `GBIFColocationDataset`
 
-Klasa `OSMColocationDataset` jest implementacją zbioru danych do odkrywania kolokacj przestrzennych bazującego na danych o obserwacjach gatunków roślin i zwierząt zanotowanych w bazie danych Global Biodiversity Information Facility (GBIF).
+Klasa `GBIFColocationDataset` jest implementacją zbioru danych do odkrywania kolokacj przestrzennych bazującego na danych o obserwacjach gatunków roślin i zwierząt zanotowanych w bazie danych Global Biodiversity Information Facility (GBIF).
 
 ### Inicjalizacja
 
@@ -290,6 +278,15 @@ def __init__(self,
 
 **Opis:**
 Konstruktor inicjalizuje obiekt oraz atrybuty klasy. 
+
+### Metoda `load_data`
+
+```python
+def load_data(self) -> pd.DataFrame:
+```
+
+**Opis:**
+Metoda wywołuje metody `_get_species_key` oraz `_get_all_occurrences` dla każdego z podanych gatunków i zapisuje pobrane obserwacje w DataFrame. Dla obserwacji gatunku zwracany jest identyfikator `id`, nazwa gatunku `type` oraz współrzędna szerokości geograficznej `x` oraz długości geograficznej `y` na której dokonano obserwacji.
 
 ### Metoda `_get_species_key`
 
@@ -315,22 +312,3 @@ def _get_all_occurrences(self, species_key: int, species_name: str) -> List[Dict
 
 **Opis:**
 Metoda wykorzystuje API GBIF do pobrania wszystkich (lub ograniczonych limitem) obserwacji danego gatunku na obszarze ustawionym podczas inicjalizacji klasy. 
-
-### Metoda `load_data`
-
-```python
-def load_data(self) -> pd.DataFrame:
-```
-
-**Opis:**
-Metoda wywołuje metody `_get_species_key` oraz `_get_all_occurrences` dla każdego z podanych gatunków i zapisuje pobrane obserwacje w DataFrame. Dla obserwacji gatunku zwracany jest identyfikator `id`, nazwa gatunku `type` oraz współrzędna szerokości geograficznej `x` oraz długości geograficznej `y` na której dokonano obserwacji.
-
-## Optymalizacje
-
-Zaimplementowano kilka kluczowych optymalizacji (zarówno zawartych w artykule źródłowym, jak i dodatkowych), które znacznie poprawiają wydajność algorytmu:
-
-1. **Ponowne wykorzystanie indeksów przestrzennych**: Drzewa KDTree są budowane raz dla każdego typu obiektu.
-2. **Wstępne obliczanie relacji sąsiedztwa**: Wszystkie relacje sąsiedztwa są obliczane z góry.
-3. **Przycinanie na podstawie wskaźnika uczestnictwa**: Filtrowanie kandydatów na podstawie górnych ograniczeń wskaźnika uczestnictwa.
-4. **Odkrywanie instancji oparte na klikach**: Efektywne podejście do znajdowania instancji wzorców.
-5. **Efektywne generowanie kandydatów**: Wykorzystanie zasady apriori do ograniczenia przestrzeni poszukiwań.
