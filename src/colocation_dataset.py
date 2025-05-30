@@ -56,7 +56,11 @@ class OSMColocationDataset(ColocationDataset):
         Loads data from OSM using the Overpass API."
         
         Returns:
-            DataFrame with the loaded data.
+            DataFrame with the generated data in the format:
+            - id: Instance ID
+            - type: Feature type
+            - x: X coordinate
+            - y: Y coordinate
         """
         api = overpy.Overpass()
 
@@ -104,6 +108,46 @@ class GBIFColocationDataset(ColocationDataset):
         self._species_names = species_names
         self._min_year = min_year
         self._limit_per_species = limit_per_species
+
+    def load_data(self) -> pd.DataFrame:
+        """
+        Load species occurrence data from GBIF API.
+        
+        Returns:
+            DataFrame with the generated data in the format:
+            - id: Instance ID
+            - type: Feature type
+            - x: X coordinate
+            - y: Y coordinate
+        """
+        data = []
+        
+        for species_name in self._species_names:
+            print(f"\nProcessing species: {species_name}")
+            
+            species_key = self._get_species_key(species_name)
+            
+            if species_key:
+                print(f"Found species key: {species_key}")
+                
+                species_data = self._get_all_occurrences(species_key, species_name)
+                print(f"Retrieved {len(species_data)} occurrences")
+                
+                data.extend(species_data)
+                
+                time.sleep(1)
+            else:
+                print(f"Warning: Could not find species '{species_name}' in GBIF database")
+        
+        df = pd.DataFrame(data)
+        
+        if not df.empty:
+            self._data = df[["id", "type", "x", "y"]]
+        else:
+            print("No data found for any species in the specified area")
+            self._data = pd.DataFrame(columns=["id", "type", "x", "y"])
+            
+        return self._data
         
     def _get_species_key(self, species_name: str) -> int:
         """
@@ -200,39 +244,3 @@ class GBIFColocationDataset(ColocationDataset):
             print(f"Error retrieving occurrences for {species_name}: {e}")
         
         return all_occurrences[:records_to_fetch]
-
-    def load_data(self) -> pd.DataFrame:
-        """
-        Load species occurrence data from GBIF API.
-        
-        Returns:
-            DataFrame with the loaded data.
-        """
-        data = []
-        
-        for species_name in self._species_names:
-            print(f"\nProcessing species: {species_name}")
-            
-            species_key = self._get_species_key(species_name)
-            
-            if species_key:
-                print(f"Found species key: {species_key}")
-                
-                species_data = self._get_all_occurrences(species_key, species_name)
-                print(f"Retrieved {len(species_data)} occurrences")
-                
-                data.extend(species_data)
-                
-                time.sleep(1)
-            else:
-                print(f"Warning: Could not find species '{species_name}' in GBIF database")
-        
-        df = pd.DataFrame(data)
-        
-        if not df.empty:
-            self._data = df[["id", "type", "x", "y"]]
-        else:
-            print("No data found for any species in the specified area")
-            self._data = pd.DataFrame(columns=["id", "type", "x", "y"])
-            
-        return self._data

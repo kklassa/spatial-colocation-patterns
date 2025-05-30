@@ -32,8 +32,7 @@ This implementation includes several optimizations:
 
 1. **Spatial Index Reuse**: KDTree indices are built once per feature type.
 2. **Neighbor Precomputation**: All neighborhood relationships are computed and stored upfront.
-3. **Prevalence-Based Pruning**: Reduces candidate patterns before the expensive instance discovery step.
-4. **Clique-Based Instance Finding**: Uses clique-based approach to find pattern instances.
+3. **Clique-Based Instance Finding**: Uses clique-based approach to find pattern instances.
 
 ## Usage
 
