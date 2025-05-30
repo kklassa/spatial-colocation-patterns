@@ -78,7 +78,7 @@ class ColocationMiner:
             k += 1
 
     def _build_spatial_indices(self) -> None:
-        """Build KDTree indices for each type once to avoid rebuilding."""
+        """Build KDTree indices for each type."""
         for t, instances in self.instances_by_type.items():
             points = instances[['x', 'y']].values
             self.spatial_indices[t] = {
@@ -141,7 +141,7 @@ class ColocationMiner:
             pattern = tuple(sorted([t1, t2]))
             self.participation_ratios[pattern] = {
                 t1: pi1,
-                t2: pi2
+                t2: pi2,
             }
             
             if pi >= self.min_prevalence and instances:

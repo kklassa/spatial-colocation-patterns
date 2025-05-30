@@ -1,4 +1,4 @@
-# Dokumentacja Algorytmu do Odkrywania Wzorców Kolokacji
+# Algorytm Odkrywania Wzorców Kolokacji
 
 ## Wprowadzenie
 
