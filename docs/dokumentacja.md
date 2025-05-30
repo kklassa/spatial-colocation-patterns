@@ -458,7 +458,7 @@ Przeprowadzono eksperymenty odkrywania kolokacji przestrzennym na obszarze Warsz
 Wśród 151 odkrytych wzorców 93 składają się z dwóch typów, 49 z trzech i jednynie 9 z czterech punktów zainteresowania.  
 Poniższy histogram przedstawia rozkład wartości wskaźnika uczestnictwa wśród odkrytych wzorców. Na wykresie można zaobserwować, iż najwięcej odkrytych wzorców ma wartość wskaźnika uczestnictwa niewiele wyższą od progu, i wraz ze wzrotstem tego wskaźnika maleje ilość wzorców.
 
-![rozkład_pi](/imgs/participation_index_distribution.png)
+![rozkład_pi](https://raw.githubusercontent.com/kklassa/spatial-colocation-patterns/1a5379b7e252da678582ae49a0840e930da5fb4d/imgs/participation_index_distribution.png)
 
 Z kolei następująca tabela przedstawia 10 typów punktów zainteresowania najczęściej pojawiających się w odkrytych wzorcach:
 
