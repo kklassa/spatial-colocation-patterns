@@ -68,12 +68,7 @@ class ColocationMiner:
             if not candidates:
                 break
             
-            pruned_candidates = self._multi_resolution_pruning(candidates, k)
-            print(f"After pruning: {len(pruned_candidates)} candidates remain")
-            if not pruned_candidates:
-                break
-            
-            new_patterns = self._discover_frequent_patterns_for_candidates(pruned_candidates)
+            new_patterns = self._discover_frequent_patterns_for_candidates(candidates)
             print(f"Found {len(new_patterns)} frequent patterns in {time.time() - start_time:.2f} seconds")
             
             if not new_patterns:
@@ -236,19 +231,19 @@ class ColocationMiner:
             List of tuples containing instance IDs that form instances of the pattern
         """
         
-        first_type = pattern_types[0] # A
+        first_type = pattern_types[0]
         current_instances: List[Tuple[TypeInstancePair, ...]] = [
             ((first_type, id_val),) for id_val in self.instances_by_type[first_type]['id'].values
         ]
         
         for i in range(1, len(pattern_types)):
-            current_type = pattern_types[i] # B
+            current_type = pattern_types[i]
             new_instances: List[Tuple[TypeInstancePair, ...]] = []
             
             for instance in current_instances:
                 can_extend = True
                 for type_id_pair in instance:
-                    # check if all existing members neighbor the current type
+                    # check if current instance has any neighbors of the current type
                     if not any(neighbor_type == current_type for neighbor_type, _ in 
                                self.instance_neighbors.get(type_id_pair, set())):
                         can_extend = False
@@ -257,10 +252,10 @@ class ColocationMiner:
                 if not can_extend:
                     continue
                 
-                # Get all potential candidates of current_type that neighbor all existing members
                 candidates: Set[InstanceId] | None = None
                 
                 for type_id_pair in instance:
+                    # get neighbors of the current type for the current instance
                     current_neighbors = {neighbor_id for neighbor_type, neighbor_id in 
                                          self.instance_neighbors.get(type_id_pair, set()) 
                                          if neighbor_type == current_type}
@@ -273,13 +268,11 @@ class ColocationMiner:
                     if not candidates:
                         break
                 
-                # Add all valid extensions to new instances
                 if candidates:
                     for candidate_id in candidates:
                         new_instance = instance + ((current_type, candidate_id),)
                         new_instances.append(new_instance)
             
-            # If no extensions were found, this pattern has no instances
             if not new_instances:
                 return []
             
@@ -291,249 +284,6 @@ class ColocationMiner:
             result.append(tuple(id_list))
         
         return result
-    
-    def _build_coarse_level_data(
-            self, 
-            grid_size: float | None = None
-        ) -> Tuple[Dict, Dict, Dict]:
-        """
-        Build coarse-level data structures for multi-resolution pruning.
-        
-        Args:
-            grid_size: Size of grid cells for coarse resolution (default: 2 * radius)
-            
-        Returns:
-            Tuple containing:
-            - coarse_instances: Dictionary mapping feature types to their coarse instances
-            - coarse_neighbors: Dictionary of coarse neighbor relationships
-            - fine_to_coarse: Mapping from fine instances to their coarse instances
-        """
-        if grid_size is None:
-            grid_size = 2 * self.radius
-        
-        coarse_instances = {}
-        fine_to_coarse = {}
-        
-        # Step 1: Create coarse instances by grouping fine instances into grid cells
-        for feature_type in self.unique_types:
-            coarse_instances[feature_type] = {}
-            instances = self.instances_by_type[feature_type]
-            
-            for idx, row in instances.iterrows():
-                # Determine grid cell
-                cell_x = int(float(row['x']) / grid_size)
-                cell_y = int(float(row['y']) / grid_size)
-                coarse_id = f"{cell_x}_{cell_y}"
-                
-                # Map fine instance to coarse instance
-                fine_to_coarse[(feature_type, row['id'])] = coarse_id
-                
-                # Create or update coarse instance
-                if coarse_id not in coarse_instances[feature_type]:
-                    coarse_instances[feature_type][coarse_id] = {
-                        'cell': (cell_x, cell_y),
-                        'instances': set(),
-                        'count': 0
-                    }
-                
-                coarse_instances[feature_type][coarse_id]['instances'].add(row['id'])
-                coarse_instances[feature_type][coarse_id]['count'] += 1
-        
-        # Step 2: Build coarse neighbor relationships
-        # Two coarse instances are neighbors if any of their fine instances are neighbors
-        coarse_neighbors = defaultdict(set)
-        
-        # Use precomputed fine-level neighbors to determine coarse neighbors
-        for (type1, id1), neighbors in self.instance_neighbors.items():
-            coarse_id1 = fine_to_coarse[(type1, id1)]
-            
-            for (type2, id2) in neighbors:
-                coarse_id2 = fine_to_coarse[(type2, id2)]
-                
-                # Add coarse neighbor relationship
-                if (type1, coarse_id1) != (type2, coarse_id2):  # Avoid self-neighbors
-                    coarse_neighbors[(type1, coarse_id1)].add((type2, coarse_id2))
-        
-        return coarse_instances, coarse_neighbors, fine_to_coarse
-
-
-    def _find_coarse_pattern_instances(
-            self, 
-            pattern_types: Tuple[FeatureType, ...], 
-            coarse_instances: Dict,                         
-            coarse_neighbors: Dict,
-        ) -> List[Tuple[Tuple[str, str], ...]]:
-        """
-        Find all coarse-level instances of a pattern using coarse neighbor relationships.
-        
-        Args:
-            pattern_types: Tuple of feature types forming the pattern
-            coarse_instances: Dictionary of coarse instances by type
-            coarse_neighbors: Dictionary of coarse neighbor relationships
-            
-        Returns:
-            List of tuples containing coarse instance identifiers that form pattern instances
-        """
-        if not pattern_types:
-            return []
-        
-        # Start with all coarse instances of the first type
-        first_type = pattern_types[0]
-        current_instances = [
-            ((first_type, coarse_id),) 
-            for coarse_id in coarse_instances.get(first_type, {}).keys()
-        ]
-        
-        # Incrementally add types to build pattern instances
-        for i in range(1, len(pattern_types)):
-            current_type = pattern_types[i]
-            new_instances = []
-            
-            for instance_tuple in current_instances:
-                # For each existing partial instance, find valid extensions
-                
-                # Check which coarse instances of current_type neighbor ALL members
-                candidates = None
-                
-                for (type_id, coarse_id) in instance_tuple:
-                    # Get neighbors of this type
-                    current_neighbors = {
-                        neighbor_coarse_id 
-                        for (neighbor_type, neighbor_coarse_id) in coarse_neighbors.get((type_id, coarse_id), set())
-                        if neighbor_type == current_type
-                    }
-                    
-                    if candidates is None:
-                        candidates = current_neighbors
-                    else:
-                        candidates &= current_neighbors
-                    
-                    if not candidates:  # No common neighbors
-                        break
-                
-                # Create new instances with valid extensions
-                if candidates:
-                    for candidate_coarse_id in candidates:
-                        new_instance = instance_tuple + ((current_type, candidate_coarse_id),)
-                        new_instances.append(new_instance)
-            
-            if not new_instances:
-                return []
-            
-            current_instances = new_instances
-        
-        return current_instances
-
-
-    def _calculate_coarse_participation_index(
-            self, 
-            pattern: Pattern,
-            coarse_pattern_instances: List,
-            coarse_instances: Dict
-        ) -> Tuple[float, Dict[str, float]]:
-        """
-        Calculate participation index at coarse level based on fine instance counts.
-        
-        Args:
-            pattern: The pattern types to evaluate
-            coarse_pattern_instances: List of coarse pattern instances
-            coarse_instances: Dictionary of coarse instances with fine instance information
-            
-        Returns:
-            Tuple containing participation index and dictionary of participation ratios per type
-        """
-        if not coarse_pattern_instances:
-            return 0.0, {t: 0.0 for t in pattern}
-        
-        # Count participating fine instances through coarse instances
-        participating_fine_instances = {feature_type: set() for feature_type in pattern}
-        
-        for coarse_instance in coarse_pattern_instances:
-            for feature_type, coarse_id in coarse_instance:
-                # All fine instances in this coarse instance participate
-                fine_instances = coarse_instances[feature_type][coarse_id]['instances']
-                participating_fine_instances[feature_type].update(fine_instances)
-        
-        # Calculate participation ratios
-        participation_ratios = {}
-        for feature_type in pattern:
-            total_instances = len(self.instances_by_type[feature_type])
-            participating = len(participating_fine_instances[feature_type])
-            participation_ratios[feature_type] = participating / total_instances if total_instances > 0 else 0.0
-        
-        # PI is minimum of all ratios
-        pi = min(participation_ratios.values()) if participation_ratios else 0.0
-        
-        return pi, participation_ratios
-
-
-    def _multi_resolution_pruning(
-        self, 
-        candidates: List[Pattern], 
-        k: int,
-        grid_size: Optional[float] = None,
-        verbose: bool = True
-    ) -> List[Pattern]:
-        """
-        Perform multi-resolution pruning on candidate patterns using coarse-level evaluation.
-        
-        Args:
-            candidates: List of candidate patterns to prune
-            k: Size of patterns being evaluated
-            grid_size: Size of grid cells (default: 2 * radius)
-            verbose: Whether to print pruning statistics
-            
-        Returns:
-            List of candidate patterns that pass coarse-level participation threshold
-        """
-        if not candidates:
-            return []
-        
-        start_time = time.time()
-        
-        # Build coarse-level data structures
-        coarse_instances, coarse_neighbors, fine_to_coarse = self._build_coarse_level_data(grid_size)
-        
-        if verbose:
-            total_coarse_instances = sum(len(instances) for instances in coarse_instances.values())
-            print(f"\nMulti-resolution pruning setup:")
-            print(f"  Grid size: {grid_size or 2 * self.radius}")
-            print(f"  Total coarse instances: {total_coarse_instances}")
-            print(f"  Avg compression ratio: {len(self.df) / total_coarse_instances:.1f}:1")
-        
-        pruned_candidates = []
-        pruned_count = 0
-        
-        # Evaluate each candidate at coarse level
-        for i, candidate in enumerate(candidates):
-            # Find coarse pattern instances
-            coarse_pattern_instances = self._find_coarse_pattern_instances(
-                candidate, coarse_instances, coarse_neighbors
-            )
-            
-            # Calculate coarse PI
-            coarse_pi, coarse_ratios = self._calculate_coarse_participation_index(
-                candidate, coarse_pattern_instances, coarse_instances
-            )
-            
-            # Prune if coarse PI < threshold
-            if coarse_pi >= self.min_prevalence:
-                pruned_candidates.append(candidate)
-            else:
-                pruned_count += 1
-                if verbose and pruned_count <= 5:  # Show first few pruned patterns
-                    print(f"  Pruned: {candidate} (coarse PI={coarse_pi:.3f})")
-        
-        if verbose:
-            elapsed = time.time() - start_time
-            print(f"\nMulti-resolution pruning results:")
-            print(f"  Candidates evaluated: {len(candidates)}")
-            print(f"  Candidates pruned: {pruned_count}")
-            print(f"  Candidates remaining: {len(pruned_candidates)}")
-            print(f"  Pruning rate: {pruned_count/len(candidates)*100:.1f}%")
-            print(f"  Time elapsed: {elapsed:.2f} seconds")
-        
-        return pruned_candidates
 
     def get_patterns(self) -> List[ColocationPattern]:
         """
